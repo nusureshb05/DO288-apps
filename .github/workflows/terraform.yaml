@@ -1,0 +1,68 @@
+name: Terraform Multi-Client Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: "Select the client"
+        required: true
+        default: "clientA"
+        type: choice
+        options: [clientA, clientB, clientC, clientD, clientE, clientF, clientG]
+      environment:
+        description: "Environment"
+        required: true
+        default: "dev"
+        type: choice
+        options: [dev, stage, prod]
+      action:
+        description: "Terraform Action"
+        required: true
+        default: "plan"
+        type: choice
+        options: [plan, apply, destroy]
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKDIR: terraform/clients/${{ github.event.inputs.client }}/envs/${{ github.event.inputs.environment }}
+      AWS_REGION: us-east-1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/GitHubTerraformRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKDIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKDIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+        working-directory: ${{ env.TF_WORKDIR }}
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        working-directory: ${{ env.TF_WORKDIR }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        working-directory: ${{ env.TF_WORKDIR }}
+        run: terraform destroy -auto-approve
